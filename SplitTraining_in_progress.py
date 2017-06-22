@@ -4,6 +4,10 @@ import gym
 import logz
 import scipy.signal
 
+import tensorflow as tf
+ 
+
+
 tiny = 1e-10
 
 def normc_initializer(std=1.0):
@@ -192,8 +196,7 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
     # this way, we can better use multiple cores for different experiments
     sess = tf.Session(config=tf_config)
     sess.__enter__() # equivalent to `with sess:`
-    tf.global_variables_initializer().run() #pylint: disable=E1101
-
+    
     if vf_type == 'linear':
         vf = LinearValueFunction()
     elif vf_type == 'nn':
@@ -252,19 +255,18 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
         vf.fit(ob_no, vtarg_n)
 
 
-
-        activationVariable = tf.Variable(trainable = True)
+        variableInit =  tf.Variable(initial_value = tf.zeros([10,16], tf.float32), validate_shape = False)
 
         actValue = sess.run(critical_layer, feed_dict={sy_ob_no:ob_no})
-
-        with tf.variable_scope("PG_vars"):
-            activationVariable = tf.assign(activationVariable, actValue)
+        print(actValue.dtype)
+        with tf.variable_scope("PG_vars", reuse = True):
+            activationVariable = tf.assign(variableInit, actValue)
 
         
-            h3_back = lrelu(dense(activationVariable, 32, "h3", weight_init=normc_initializer(1.0), reuse = True)) # hidden layer
+            h3_back = lrelu(dense(activationVariable, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layer
 
   
-            sy_logits_back = dense(h3_back, num_actions, "final", weight_init=normc_initializer(0.05), reuse = True)
+            sy_logits_back = dense(h3_back, num_actions, "final", weight_init=normc_initializer(0.05))
 
 
         sy_logp = tf.nn.log_softmax(sy_logits_back) # logprobability of actions
@@ -272,15 +274,20 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
         sy_logprob_n = fancy_slice_2d(sy_logp, tf.range(sy_n), sy_ac_n) # log-prob of actions taken -- used for policy gradient calculation
 
         sy_surr = - tf.reduce_mean(sy_adv_n * sy_logprob_n) # Loss function that we'll differentiate to get the policy gradient ("surr" is for "surrogate loss")
+        cross_entropy = tf.reduce_mean(-tf.reduce_sum(activationVariable* tf.log(critical_layer), reduction_indices=[1]))
+
         _PGvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='PG_vars')
+        _SLvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='SL_vars')
+
         #sy_stepsize = tf.placeholder(shape=[], dtype=tf.float32) # Symbolic, in case you want to change the stepsize during optimization. (We're not doing that currently)
+        tf.global_variables_initializer().run() #pylint: disable=E1101
+
+        
         PG_step = tf.train.AdamOptimizer().minimize(loss = sy_surr, var_list = _PGvars)
 
 
         sess.run(PG_step, feed_dict={sy_ob_no:ob_no, sy_ac_n:ac_n, sy_adv_n:standardized_adv_n} )
 
-        cross_entropy = tf.reduce_mean(-tf.reduce_sum(activationVariable* tf.log(critical_layer), reduction_indices=[1]))
-        _SLvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='SL_vars')
         SL_step = tf.train.AdamOptimizer(1e-4).minimize(loss = cross_entropy, var_list = _SLvars)
 
         sess.run(SL_step, feed_dict={sy_ob_no:ob_no} )
