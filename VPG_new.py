@@ -28,12 +28,11 @@ def policy(obs):
         out = layers.flatten(out)
     
         out = layers.fully_connected(out, num_outputs=5, activation_fn=tf.nn.relu, trainable = True, weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32))
-        logits = layers.fully_connected(out, num_outputs=2, activation_fn=None, trainable = True, weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32))
+        out = layers.fully_connected(out, num_outputs=2, activation_fn=None, trainable = True, weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32))
 
-        logProb = tf.nn.log_softmax(logits)
-        Prob = tf.nn.softmax(logits)
+        logProb = tf.nn.log_softmax(out)
         
-        return logProb, Prob
+        return logProb
 
 
 
@@ -78,8 +77,7 @@ def sampleTrajectory():
         
         observation_History = np.vstack((observation_History,[[observation]]))
  
-        movement= session.run(PolicyProb, feed_dict = {x_ph: [[observation]]})
-
+        movement= session.run(policyOutput, feed_dict = {x_ph: [[observation]]})
 
         action = sample(movement[0])
 
@@ -125,10 +123,9 @@ aprob_ph = tf.placeholder(tf.float32, shape = [None])
 rsum_ph = tf.placeholder(tf.float32, shape=[None])
 
 
-PolicyLogProb, PolicyProb= policy(x_ph)
+policyOutput = policy(x_ph)
 
-
-act0logProb, act1logProb = tf.split(PolicyLogProb,2,1)
+act0logProb, act1logProb = tf.split(policyOutput,2,1)
 
 ones_ph = tf.placeholder(dtype = tf.float32, shape=[None])
 logProb = tf.multiply(tf.subtract(ones_ph, a_ph), act0logProb) + tf.multiply(a_ph, act1logProb)
