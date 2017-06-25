@@ -1,5 +1,4 @@
-#For cartpole
-#discrete space (2,)
+
 from rllab.envs.box2d.cartpole_env import CartpoleEnv
 from rllab.envs.normalized_env import normalize
 from rllab.envs.gym_env import GymEnv
