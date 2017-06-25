@@ -156,19 +156,17 @@ def main_cartpole_split(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, 
     with tf.variable_scope("SL_vars"):
         sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
         sy_h2 = lrelu(dense(sy_h1, 32, "h2", weight_init=normc_initializer(1.0))) # hidden layer
-        sy_h3 = lrelu(dense(sy_h2 32, "h3", weight_init=normc_initializer(1.0))) # hidden layen      
-        critical_layer = dense(sy_h3, 16, "criticalLayer", weight_init=normc_initializer(1.0)) # hidden layer
-
+        critical_layer = lrelu(dense(sy_h2, 16, "criticalLayer", weight_init=normc_initializer(1.0))) # hidden layer
     with tf.variable_scope("PG_vars"):
         #The weights of the two following layers are in the PG scope
-
-        sy_logits_na = dense(critical_layer, num_actions, "final", weight_init=normc_initializer(0.05))
+        sy_h3 = lrelu(dense(critical_layer, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layen
+        sy_logits_na = dense(sy_h3, num_actions, "final", weight_init=normc_initializer(0.05))
         
         activation = tf.Variable(initial_value = tf.zeros([numTimestepsBatch,16], dtype = tf.float32),name = "activation", trainable = True)
         activationOp = activation.assign(critical_layer)
     with tf.variable_scope("PG_vars", reuse = True):
-        #h3_back = lrelu(dense(activation, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layer
-        sy_logits_back = dense(activation, num_actions, "final", weight_init=normc_initializer(0.05))
+        h3_back = lrelu(dense(activation, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layer
+        sy_logits_back = dense(h3_back, num_actions, "final", weight_init=normc_initializer(0.05))
     
     
     
