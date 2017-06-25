@@ -169,23 +169,39 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
     sy_ob_no = tf.placeholder(shape=[None, ob_dim], name="ob", dtype=tf.float32) # batch of observations
     sy_ac_n = tf.placeholder(shape=[None], name="ac", dtype=tf.int32) # batch of actions taken by the policy, used for policy gradient computation
     sy_adv_n = tf.placeholder(shape=[None], name="adv", dtype=tf.float32) # advantage function estimate
+    sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
+    
 
-    with tf.variable_scope("SL_vars"):
-        sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
-        sy_h2 = lrelu(dense(sy_h1, 32, "h2", weight_init=normc_initializer(1.0))) # hidden layer
-        critical_layer = lrelu(dense(sy_h2, 16, "criticalLayer", weight_init=normc_initializer(1.0))) # hidden layer
+    sy_h2 = lrelu(dense(sy_h1, 32, "h2", weight_init=normc_initializer(1.0))) # hidden layer
 
-    with tf.variable_scope("PG_vars"):
-        #The weights of the two following layers are in the PG scope
-        sy_h3 = lrelu(dense(critical_layer, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layen
-        sy_logits_na = dense(sy_h3, num_actions, "final", weight_init=normc_initializer(0.05))
+    critical_layer = relu(dense(sy_h2, 16, "criticalLayer", weight_init=normc_initializer(1.0))) # hidden layer
+
+
+    sy_h3 = lrelu(dense(critical_layer, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layer
+
+  
+    sy_logits_na = dense(sy_h3, num_actions, "final", weight_init=normc_initializer(0.05))
 
      # "logits", describing probability distribution of final layer
     # we use a small initialization for the last layer, so the initial policy has maximal entropy
-    
-    
+    sy_oldlogits_na = tf.placeholder(shape=[None, num_actions], name='oldlogits', dtype=tf.float32) # logits BEFORE update (just used for KL diagnostic)
+    sy_logp_na = tf.nn.log_softmax(sy_logits_na) # logprobability of actions
     sy_sampled_ac = categorical_sample_logits(sy_logits_na)[0] # sampled actions, used for defining the policy (NOT computing the policy gradient)
-   
+    sy_n = tf.shape(sy_ob_no)[0]
+    sy_logprob_n = fancy_slice_2d(sy_logp_na, tf.range(sy_n), sy_ac_n) # log-prob of actions taken -- used for policy gradient calculation
+
+    # The following quantities are just used for computing KL and entropy, JUST FOR DIAGNOSTIC PURPOSES >>>>
+    sy_oldlogp_na = tf.nn.log_softmax(sy_oldlogits_na)
+    sy_oldp_na = tf.exp(sy_oldlogp_na) 
+    sy_kl = tf.reduce_sum(sy_oldp_na * (sy_oldlogp_na - sy_logp_na)) / tf.to_float(sy_n)
+    sy_p_na = tf.exp(sy_logp_na)
+    sy_ent = tf.reduce_sum( - sy_p_na * sy_logp_na) / tf.to_float(sy_n)
+    # <<<<<<<<<<<<<
+
+    sy_surr = - tf.reduce_mean(sy_adv_n * sy_logprob_n) # Loss function that we'll differentiate to get the policy gradient ("surr" is for "surrogate loss")
+
+    sy_stepsize = tf.placeholder(shape=[], dtype=tf.float32) # Symbolic, in case you want to change the stepsize during optimization. (We're not doing that currently)
+    update_op = tf.train.AdamOptimizer(sy_stepsize).minimize(sy_surr)
 
     tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1) 
     # use single thread. on such a small problem, multithreading gives you a slowdown
@@ -251,46 +267,15 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
         vpred_n = np.concatenate(vpreds)
         vf.fit(ob_no, vtarg_n)
 
-
-
-        activationVariable = tf.Variable(trainable = True)
-
-        actValue = sess.run(critical_layer, feed_dict={sy_ob_no:ob_no})
-
-        with tf.variable_scope("PG_vars"):
-            activationVariable = tf.assign(activationVariable, actValue)
-
-        
-            h3_back = lrelu(dense(activationVariable, 32, "h3", weight_init=normc_initializer(1.0), reuse = True)) # hidden layer
-
-  
-            sy_logits_back = dense(h3_back, num_actions, "final", weight_init=normc_initializer(0.05), reuse = True)
-
-
-        sy_logp = tf.nn.log_softmax(sy_logits_back) # logprobability of actions
-        sy_n = tf.shape(sy_ob_no)[0]
-        sy_logprob_n = fancy_slice_2d(sy_logp, tf.range(sy_n), sy_ac_n) # log-prob of actions taken -- used for policy gradient calculation
-
-        sy_surr = - tf.reduce_mean(sy_adv_n * sy_logprob_n) # Loss function that we'll differentiate to get the policy gradient ("surr" is for "surrogate loss")
-        _PGvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='PG_vars')
-        #sy_stepsize = tf.placeholder(shape=[], dtype=tf.float32) # Symbolic, in case you want to change the stepsize during optimization. (We're not doing that currently)
-        PG_step = tf.train.AdamOptimizer().minimize(loss = sy_surr, var_list = _PGvars)
-
-
-        sess.run(PG_step, feed_dict={sy_ob_no:ob_no, sy_ac_n:ac_n, sy_adv_n:standardized_adv_n} )
-
-        cross_entropy = tf.reduce_mean(-tf.reduce_sum(activationVariable* tf.log(critical_layer), reduction_indices=[1]))
-        _SLvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='SL_vars')
-        SL_step = tf.train.AdamOptimizer(1e-4).minimize(loss = cross_entropy, var_list = _SLvars)
-
-        sess.run(SL_step, feed_dict={sy_ob_no:ob_no} )
-       
+        # Policy update
+        _, oldlogits_na = sess.run([update_op, sy_logits_na], feed_dict={sy_ob_no:ob_no, sy_ac_n:ac_n, sy_adv_n:standardized_adv_n, sy_stepsize:stepsize})
+        kl, ent = sess.run([sy_kl, sy_ent], feed_dict={sy_ob_no:ob_no, sy_oldlogits_na:oldlogits_na})
 
         # Log diagnostics
         logz.log_tabular("EpRewMean", np.mean([path["reward"].sum() for path in paths]))
         logz.log_tabular("EpLenMean", np.mean([pathlength(path) for path in paths]))
-        #logz.log_tabular("KLOldNew", kl)
-        #logz.log_tabular("Entropy", ent)
+        logz.log_tabular("KLOldNew", kl)
+        logz.log_tabular("Entropy", ent)
         logz.log_tabular("EVBefore", explained_variance_1d(vpred_n, vtarg_n))
         logz.log_tabular("EVAfter", explained_variance_1d(vf.predict(ob_no), vtarg_n))
         logz.log_tabular("TimestepsSoFar", total_timesteps)
@@ -443,7 +428,7 @@ def main_pendulum1(d):
 
 def run(case):
     if case == 0 or case < 0:
-        main_cartpole(logdir=None,vf_type='linear', animate=False) # when you want to start collecting results, set the logdir
+        main_cartpole(logdir='./log/cartpole-linear',vf_type='linear', animate=False) # when you want to start collecting results, set the logdir
     if case == 1 or case < 0:
         main_cartpole(logdir='./log/cartpole-nn',vf_type='nn',animate=False) # when you want to start collecting results, set the logdir    
     if case == 2 or case < 0:
