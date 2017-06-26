@@ -5,7 +5,7 @@ import logz
 import scipy.signal
 import tensorflow as tf
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt 
 tiny = 1e-10
 def normc_initializer(std=1.0):
@@ -292,7 +292,11 @@ def main_cartpole_split(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, 
     
     return MeanRewardHistory
    
-def main_cartpole_vpg(numBatches = 50, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):                                            
+def cartpoleVpg(seed = 0, numBatches = 50, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):                                            
+     tf.reset_default_graph()
+     tf.set_random_seed(seed)
+     np.random.seed(seed)
+
      tf.reset_default_graph()                                                                                                                                                           
      env = gym.make("CartPole-v0")                                                                                                                                                      
      ob_dim = env.observation_space.shape[0]                                                                                                                                            
@@ -470,7 +474,7 @@ def main_cartpole_vpg(numBatches = 50, gamma=1.0, min_timesteps_per_batch=1000, 
          # Note that we fit value function AFTER using it to compute the advantage function to avoid introducing bias
          logz.dump_tabular()
      
-     return MeanRewardHistory
+     return MeanRewardHistory, _, PG_Loss
 
 
 
@@ -482,7 +486,7 @@ def main_cartpole_vpg(numBatches = 50, gamma=1.0, min_timesteps_per_batch=1000, 
     
 def run(case):
     if case == 0 or case < 0:
-        batches = 50
+        batches = 1
         MeanSplitRewards = main_cartpole_split(numBatches = batches,logdir=None,vf_type='linear', animate=False) # when you want to start collecting results, set the logdir
         MeanVpgRewards = main_cartpole_vpg(numBatches = batches, logdir=None,vf_type = 'linear', animate=False)
 

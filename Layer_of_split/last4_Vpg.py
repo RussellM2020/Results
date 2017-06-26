@@ -138,7 +138,12 @@ def normal_kl(old_mean, old_log_std, new_mean, new_log_std):
         numerator / denominator + new_log_std - old_log_std, axis=1)
 def normal_entropy(log_std):
     return tf.reduce_sum(log_std + np.log(np.sqrt(2 * np.pi * np.e)), axis=1)
-def main_cartpole_split(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):
+def cartpoleSplit_4(seed = 0, numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):
+    
+    tf.reset_default_graph()
+    tf.set_random_seed(seed)
+    np.random.seed(seed)
+    
     tf.reset_default_graph()
     env = gym.make("CartPole-v0")
     ob_dim = env.observation_space.shape[0]
@@ -296,7 +301,7 @@ def main_cartpole_split(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, 
         # Note that we fit value function AFTER using it to compute the advantage function to avoid introducing bias
         logz.dump_tabular()
     
-    return MeanRewardHistory
+    return MeanRewardHistory, SL_Loss, PG_Loss
    
  
     

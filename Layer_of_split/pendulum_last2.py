@@ -3,11 +3,9 @@ import tensorflow as tf
 import gym
 import logz
 import scipy.signal
-import tensorflow as tf
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt 
+
 tiny = 1e-10
+
 def normc_initializer(std=1.0):
     """
     Initialize array with normalized columns
@@ -17,6 +15,7 @@ def normc_initializer(std=1.0):
         out *= std / np.sqrt(np.square(out).sum(axis=0, keepdims=True))
         return tf.constant(out)
     return _initializer
+
 def dense(x, size, name, weight_init=None):
     """
     Dense (fully connected) layer
@@ -29,6 +28,7 @@ def dense(x, size, name, weight_init=None):
         w = tf.get_variable('weight', [x.get_shape()[1], size], initializer=weight_init)
         b = tf.get_variable('bias', [size], initializer=tf.constant_initializer(0, dtype=tf.float32))
     return tf.matmul(x, w) + b
+
 def fancy_slice_2d(X, inds0, inds1):
     """
     Like numpy's X[inds0, inds1]
@@ -39,12 +39,14 @@ def fancy_slice_2d(X, inds0, inds1):
     ncols = shape[1]
     Xflat = tf.reshape(X, [-1])
     return tf.gather(Xflat, inds0 * ncols + inds1)
+
 def discount(x, gamma):
     """
     Compute discounted sum of future values
     out[i] = in[i] + gamma * in[i+1] + gamma^2 * in[i+2] + ...
     """
     return scipy.signal.lfilter([1],[1,-gamma],x[::-1], axis=0)[::-1]
+
 def explained_variance_1d(ypred,y):
     """
     Var[ypred - y] / var[y]. 
@@ -53,6 +55,7 @@ def explained_variance_1d(ypred,y):
     assert y.ndim == 1 and ypred.ndim == 1    
     vary = np.var(y)
     return np.nan if vary==0 else 1 - np.var(y-ypred)/vary
+
 def categorical_sample_logits(logits):
     """
     Samples (symbolically) from categorical distribution, where logits is a NxK
@@ -64,8 +67,10 @@ def categorical_sample_logits(logits):
     """
     U = tf.random_uniform(tf.shape(logits))
     return tf.argmax(logits - tf.log(-tf.log(U)), dimension=1)
+
 def pathlength(path):
     return len(path["reward"])
+
 class LinearValueFunction(object):
     coef = None
     def fit(self, X, y):
@@ -82,11 +87,14 @@ class LinearValueFunction(object):
             return self.preproc(X).dot(self.coef)
     def preproc(self, X):
         return np.concatenate([np.ones([X.shape[0], 1]), X, np.square(X)/2.0], axis=1)
+
 class NnValueFunction(object):
     coeffs = None
+
     def __init__(self, session):
         self.net = None
         self.session = session
+
     def create_net(self, shape):
         self.x = tf.placeholder(tf.float32, shape=[None, shape], name="x")
         self.y = tf.placeholder(tf.float32, shape=[None], name="y")
@@ -97,24 +105,30 @@ class NnValueFunction(object):
         l2 = (self.net - self.y) * (self.net - self.y)
         self.train = tf.train.AdamOptimizer().minimize(l2)
         self.session.run(tf.initialize_all_variables())
+
     def preproc(self, X):
         return np.concatenate([np.ones([X.shape[0], 1]), X, np.square(X)/2.0], axis=1)
+
     def fit(self, X, y):
         featmat = self.preproc(X)
         if self.net is None:
             self.create_net(featmat.shape[1])
         for _ in range(40):
             self.session.run(self.train, {self.x: featmat, self.y: y})
+
     def predict(self, X):
         if self.net is None:
             return np.zeros(X.shape[0])
         else:
             ret = self.session.run(self.net, {self.x: self.preproc(X)})
             return np.reshape(ret, (ret.shape[0],))
+
+
 def lrelu(x, leak=0.2):
     f1 = 0.5 * (1 + leak)
     f2 = 0.5 * (1 - leak)
     return f1 * x + f2 * abs(x)
+
 def normal_log_prob(x, mean, log_std, dim):
     """
     x: [batch, dim]
@@ -124,6 +138,8 @@ def normal_log_prob(x, mean, log_std, dim):
     return - tf.reduce_sum(log_std, axis=1) - \
            0.5 * tf.reduce_sum(tf.square(zs), axis=1) - \
            0.5 * dim * np.log(2 * np.pi)
+
+
 def normal_kl(old_mean, old_log_std, new_mean, new_log_std):
     """
     mean, log_std: [batch,  dim]
@@ -136,50 +152,65 @@ def normal_kl(old_mean, old_log_std, new_mean, new_log_std):
     denominator = 2 * tf.square(new_std) + tiny
     return tf.reduce_sum(
         numerator / denominator + new_log_std - old_log_std, axis=1)
+
+
 def normal_entropy(log_std):
     return tf.reduce_sum(log_std + np.log(np.sqrt(2 * np.pi * np.e)), axis=1)
-def cartpoleSplit_3(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):
+
+
+
+def main_pendulum(seed = 0, numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):
     tf.reset_default_graph()
-    env = gym.make("CartPole-v0")
+    tf.set_random_seed(seed)
+    np.random.seed(seed)
+    env = gym.make("Pendulum-v0")
     ob_dim = env.observation_space.shape[0]
-    num_actions = env.action_space.n
+    ac_dim = env.action_space.shape[0]
     logz.configure_output_dir(logdir)
-    
-    
-    numTimestepsBatch = 10000
+
+    numTimestepsBatch = 1000
+
     # Symbolic variables have the prefix sy_, to distinguish them from the numerical values
     # that are computed later in these function
-    sy_ob_no = tf.placeholder(shape=[None, ob_dim], name="ob", dtype=tf.float32) # batch of observations
-    sy_ac_n = tf.placeholder(shape=[None], name="ac", dtype=tf.int32) # batch of actions taken by the policy, used for policy gradient computation
-    sy_adv_n = tf.placeholder(shape=[None], name="adv", dtype=tf.float32) # advantage function estimate
+    sy_ob_no = tf.placeholder(shape=[None, ob_dim], name="ob", dtype=tf.float32)  # batch of observations
+    sy_ac_n = tf.placeholder(shape=[None, ac_dim], name="ac",
+                             dtype=tf.float32)  # batch of actions taken by the policy, used for policy gradient computation
+    sy_adv_n = tf.placeholder(shape=[None], name="adv", dtype=tf.float32)  # advantage function estimate
     
+
+
+
     with tf.variable_scope("SL_vars"):
-        sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
-        critical_layer = dense(sy_h1, 16, "criticalLayer", weight_init=normc_initializer(1.0)) # hidden layer
-    
+        sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(0.1))) # hidden layer
+        sy_h2 = lrelu(dense(sy_h1, 32, "h2", weight_init=normc_initializer(0.1))) # hidden layer
+        critical_layer = dense(sy_h2, 16, "criticalLayer", weight_init=normc_initializer(0.1)) # hidden layer
+
     with tf.variable_scope("PG_vars"):
         #The weights of the two following layers are in the PG scope
-        
-        sy_h2 = lrelu(dense(critical_layer, 32, "h2", weight_init=normc_initializer(1.0))) # hidden layer
-        sy_h3 = lrelu(dense(sy_h2, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layen
-        sy_logits_na = dense(sy_h3, num_actions, "final", weight_init=normc_initializer(0.05))
+        sy_h3 = lrelu(dense(critical_layer, 32, "h3", weight_init=normc_initializer(0.1))) # hidden layen
+       
+        sy_mean_na = dense(sy_h3, ac_dim, 'mean', weight_init=normc_initializer(0.01))
+        sy_logstd_a = dense(sy_h3, ac_dim, 'logstd', weight_init=normc_initializer(0.01))
         
         activation = tf.Variable(initial_value = tf.zeros([numTimestepsBatch,16], dtype = tf.float32),name = "activation", trainable = True)
         activationOp = activation.assign(critical_layer)
-    
+
     with tf.variable_scope("PG_vars", reuse = True):
- 
-        h2_back = lrelu(dense(activation, 32, "h2", weight_init=normc_initializer(1.0))) # hidden layer
-        h3_back = lrelu(dense(h2_back, 32, "h3", weight_init=normc_initializer(1.0))) # hidden layer
-        sy_logits_back = dense(h3_back, num_actions, "final", weight_init=normc_initializer(0.05))
+        h3_back = lrelu(dense(activation, 32, "h3", weight_init=normc_initializer(0.1))) # hidden layer
+        sy_mean_back = dense(h3_back, ac_dim, "mean", weight_init=normc_initializer(0.01))
+        sy_logstd_back = dense(h3_back, ac_dim, 'logstd', weight_init=normc_initializer(0.01))
     
-    
-    
-    sy_sampled_ac = categorical_sample_logits(sy_logits_na)[0] # sampled actions, used for defining the policy (NOT computing the policy gradient)
-    
-    sy_logp = tf.nn.log_softmax(sy_logits_back) # logprobability of actions
-    sy_n = tf.shape(sy_ob_no)[0]
-    sy_logprob_n = fancy_slice_2d(sy_logp, tf.range(sy_n), sy_ac_n) # log-prob of actions taken -- used for policy gradient calculation
+
+
+
+    sy_sampled_eps = tf.random_normal(tf.shape(sy_mean_na))
+    sy_sampled_ac = (sy_sampled_eps * tf.exp(sy_logstd_a) + sy_mean_na)[0]
+    # log P = -0.5 * (x - mu) ^2 / Sigma - k/2 log(2 pi) - 0.5 log(|Sigma|)
+    #       = -0.5 * (x - mu) ^ 2 / (std)^2 - sum_k log(std) - 0.5 * k * log(2pi)
+    sy_logprob_n = normal_log_prob(sy_ac_n,sy_mean_back,sy_logstd_back,ac_dim)
+
+   
+
     sy_surr = - tf.reduce_mean(sy_adv_n * sy_logprob_n) # Loss function that we'll differentiate to get the policy gradient ("surr" is for "surrogate loss")
     l2_loss = tf.nn.l2_loss(tf.subtract(activation, critical_layer))
         #activationOp will change during the PG_step
@@ -188,34 +219,34 @@ def cartpoleSplit_3(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, step
         #sy_stepsize = tf.placeholder(shape=[], dtype=tf.float32) # Symbolic, in case you want to change the stepsize during optimization. (We're not doing that currently)
         #tf.global_variables_initializer().run() #pylint: disable=E1101
           
-    for variable in _PGvars:
-        print(variable)    
+    
     optimizerPG = tf.train.AdamOptimizer(1e-2)
     PG_step = optimizerPG.minimize(loss = sy_surr, var_list = _PGvars)
        
     optimizerSL = tf.train.AdamOptimizer(1e-3)
     SL_step = optimizerSL.minimize(loss =l2_loss, var_list = _SLvars)
     tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1) 
-    # use single thread. on such a small problem, multithreading gives you a slowdown
-    # this way, we can better use multiple cores for different experiments
-    #sess = tf.Session(config=tf_config)
-    #sess.__enter__() # equivalent to `with sess:`
-    sess = tf.InteractiveSession(config = tf_config)
-    globalOp = tf.global_variables_initializer()
-    sess.run(globalOp)
-    
+   
+
+    sess = tf.Session()
+    sess.__enter__() # equivalent to `with sess:`
+    tf.global_variables_initializer().run() #pylint: disable=E1101
+
     if vf_type == 'linear':
         vf = LinearValueFunction()
     elif vf_type == 'nn':
         vf = NnValueFunction(sess)
     else:
         raise NotImplementedError
+
     total_timesteps = 0
     MeanRewardHistory=[]    
     SL_Loss=[]
     PG_Loss = []
     for i in range(numBatches):
+
         print("********** Iteration %i ************"%i)
+        print(i)
         flag = True
         # Collect paths until we have enough timesteps
         timesteps_this_batch = 0
@@ -226,8 +257,8 @@ def cartpoleSplit_3(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, step
             obs, acs, rewards = [], [], []
             animate_this_episode=(len(paths)==0 and (i % 10 == 0) and animate)
             while True:
-                if animate_this_episode:
-                    env.render()
+                #if animate_this_episode:
+                    #env.render()
                 obs.append(ob)
                 ac = sess.run(sy_sampled_ac, feed_dict={sy_ob_no : ob[None]})
                 acs.append(ac)
@@ -264,17 +295,13 @@ def cartpoleSplit_3(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, step
         vpred_n = np.concatenate(vpreds)
         vf.fit(ob_no, vtarg_n)
         value = sess.run(activationOp, feed_dict = {sy_ob_no:ob_no})
-       # print("Activation before PG")
+        #print("Activation before PG")
        # print(sess.run(activation))
         sess.run(PG_step, feed_dict={sy_ob_no:ob_no, sy_ac_n:ac_n, sy_adv_n:standardized_adv_n} )
        # print("Activation after PG")
        # print(sess.run(activation))
         sess.run(SL_step, feed_dict={sy_ob_no:ob_no} )
-        
-        
-        
-        
-       
+
         # Log diagnostics
         EpRewMean = np.mean([path["reward"].sum() for path in paths])
         MeanRewardHistory.append(EpRewMean)
@@ -299,20 +326,14 @@ def cartpoleSplit_3(numBatches=50, gamma=1.0, min_timesteps_per_batch=1000, step
    
  
     
+
+
+def main_pendulum1(d):
+    return main_pendulum(**d)
+
 def run(case):
     if case == 0 or case < 0:
-        batches = 50
-        MeanSplitRewards = main_cartpole_split(numBatches = batches,logdir=None,vf_type='linear', animate=False) # when you want to start collecting results, set the logdir
-        MeanVpgRewards = main_cartpole_vpg(numBatches = batches, logdir=None,vf_type = 'linear', animate=False)
-        Iterations= range(0,batches)                           
-        plt.plot(Iterations, MeanSplitRewards, '-r', label = 'SplitRewards')
-        plt.plot(Iterations,MeanVpgRewards, '-b', label = 'VpgRewards')   
-        plt.xlabel("Iteration")
-        plt.ylabel("Sum of Rewards")                     
-        plt.axis([0, batches,0, 202])
-        plt.title('Split vs Vpg')
-        plt.savefig('dualPlot.png')
- 
+        main_cartpole(logdir='./log/cartpole-linear',vf_type='linear', animate=False) # when you want to start collecting results, set the logdir
     if case == 1 or case < 0:
         main_cartpole(logdir='./log/cartpole-nn',vf_type='nn',animate=False) # when you want to start collecting results, set the logdir    
     if case == 2 or case < 0:
@@ -328,6 +349,7 @@ def run(case):
         import multiprocessing
         p = multiprocessing.Pool()
         p.map(main_pendulum1, params)
+
 if __name__ == "__main__":
     import argparse
     parser=argparse.ArgumentParser()
