@@ -1,0 +1,7 @@
+fullVPG_exp1 : 
+dist = x ** 2 + y ** 2
+#Square of side 40. by square(s) - pi*square(r) = pi*square(r), we get expected value of r approx. 16
+# This is confirmed by emperical observation
+avgDist = 16**2
+leverageFactor = 10**2
+reward = -dist + math.exp(-dist)*avgDist*leverageFactor

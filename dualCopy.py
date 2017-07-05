@@ -470,7 +470,7 @@ def main_cartpole_vpg(numBatches = 50, gamma=1.0, min_timesteps_per_batch=1000, 
          # Note that we fit value function AFTER using it to compute the advantage function to avoid introducing bias
          logz.dump_tabular()
      
-     return MeanRewardHistory
+     return MeanRewardHistory, _, PG_Loss
 
 
 
