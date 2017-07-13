@@ -9,7 +9,7 @@ import math
 class PointImageEnv(Env):
     #TODO: Need to make this images
 
-    def __init__(self, img_size=20):
+    def __init__(self, img_size=40):
         self.img_size = img_size
         self.mid = int(self.img_size/2)
         super(Env, self).__init__()

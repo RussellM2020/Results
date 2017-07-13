@@ -1,2 +1,7 @@
 1. Images take in by the conv gaussain policy are flattened --- is this okay?
 2. For the variable assign to work properly, the batch size needs to be constant. That means the last trajectory is cut-off, if total number of batch steps exceed the set batch size
+
+Important points while switching from split to plain
+1. tf.core.network (Parameterized)
+2. tf.core.layers_powered (Parameterized)
+3. tf.policies.base (Parameterized)

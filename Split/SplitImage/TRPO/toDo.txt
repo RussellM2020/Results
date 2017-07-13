@@ -1,0 +1,13 @@
+1.point mass-VPG (full state) (3 random seeds) (variance)
+2. point-mass VPG (split - at diff layers) 
+3. diff. SL steps (1 vpg, 5 SL, 10 SL) (with mini-batches)
+4. baseline vs split vs just last 2 PG vs turn of SL (activariable present/not present)
+5. changing learning rate 
+6. validation curves
+
+##IDEA : Targets for SL move around too fast. Maybe we would do better if we had fixed targets?
+#pre-train pose prediction
+#Now run regular VPG. Add an l2_loss for an activation layer and corresponding layer in the pose predictor
+#Can do the same in split training (Add l2_loss for the actVar in the PG step)
+
+

@@ -1,0 +1,35 @@
+exp_1:
+Full TRPO
+ conv_filters = [20, 10],
+
+
+    conv_filter_sizes = [11, 5],
+    conv_strides = [1,1],
+    conv_pads = ["SAME", "SAME"],
+
+
+    hidden_sizes=[ 32, 32, ac_dim],
+    learn_std = False,
+
+exp_2:
+Full TRPO
+ conv_filters = [10, 5],
+
+
+    conv_filter_sizes = [5, 3],
+    conv_strides = [1,1],
+    conv_pads = ["SAME", "SAME"],
+
+
+    hidden_sizes=[ 32, 32, ac_dim],
+    learn_std = False,
+
+exp_3:
+Split TRPO
+Kernels : same as exp_2
+SL rate: 1e-4
+num_SL_steps: 5
+
+exp_4:
+Split TRPO
+same as exp_3, with SL rate: 1e-5
